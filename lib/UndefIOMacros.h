@@ -1,0 +1,2 @@
+#undef readt
+#undef fwd
