@@ -1,0 +1,1 @@
+#include "ResourceDatabase.h"

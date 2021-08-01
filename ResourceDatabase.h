@@ -1,0 +1,12 @@
+#ifndef QQT_MAP_EDITOR_FIN__RESOURCEDATABASE_H
+#define QQT_MAP_EDITOR_FIN__RESOURCEDATABASE_H
+
+
+
+class ResourceDatabase {
+
+};
+
+
+
+#endif //QQT_MAP_EDITOR_FIN__RESOURCEDATABASE_H
