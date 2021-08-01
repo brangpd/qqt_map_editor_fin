@@ -1,26 +1,28 @@
-#ifndef QQT_MAP_EDITOR_FIN_LIB_QQTMAPELEMENT_H
-#define QQT_MAP_EDITOR_FIN_LIB_QQTMAPELEMENT_H
+#pragma once
 
-#include "EQQTCity.h"
 #include <cstdint>
 #include <vector>
-#include <memory>
+#include "EQQTCity.h"
 
 struct QQFDIMG;
-struct QQTMapElement {
+
+struct QQTMapElement
+{
   int32_t id;
   int16_t w;
   int16_t h;
-  int16_t offsetW;
-  int16_t offsetH;
+  int16_t xOffset;
+  int16_t yOffset;
   int32_t life;
   int32_t level;
   uint32_t special;
-  std::vector<unsigned> attributes;
-  std::shared_ptr<QQFDIMG> qqfdimg;
+  std::vector<uint32_t> attributes;
 
-  EQQTCity getCity() const;
+  static EQQTCity getCity(int id) { return static_cast<EQQTCity>(id / 1000); }
+  EQQTCity getCity() const { return getCity(id); }
+  static int getIdInCity(int id) { return id % 1000; }
+  int getIdInCity() const { return getIdInCity(id); }
   bool isGround() const;
+  bool canBeHidden() const;
+  bool canBeDestroyed() const { return special & 1; }
 };
-
-#endif // QQT_MAP_EDITOR_FIN_LIB_QQTMAPELEMENT_H

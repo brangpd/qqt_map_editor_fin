@@ -15,30 +15,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(QT NAMES Qt5 COMPONENTS Widgets REQUIRED)
 find_package(Qt5 COMPONENTS Widgets REQUIRED)
 
+include_directories(.)
 include_directories(lib)
 
-set(PROJECT_SOURCES
-    main.cpp
-    MainWindow.cpp
-    MainWindow.h
-    MainWindow.ui
-    FrameMapArea.cpp
-    FrameMapArea.h
-    FrameMapArea.ui
-    )
-
 file(GLOB_RECURSE _lib_sources lib/*)
+file(GLOB_RECURSE _ui_sources ui/*)
 
-add_executable(qqt_map_editor_fin
-    ${PROJECT_SOURCES}
+add_executable(${PROJECT_NAME}
+    main.cpp res.qrc
     ${_lib_sources}
+    ${_ui_sources}
     )
 
 target_include_directories(${PROJECT_NAME} PUBLIC lib)
-target_precompile_headers(${PROJECT_NAME} PRIVATE stlpch.h)
-target_link_libraries(qqt_map_editor_fin PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_precompile_headers(${PROJECT_NAME} PRIVATE stlpch.h qtpch.h)
+target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Widgets)
 
-set_target_properties(qqt_map_editor_fin PROPERTIES
+set_target_properties(${PROJECT_NAME} PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER my.example.com
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}

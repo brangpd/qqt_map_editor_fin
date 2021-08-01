@@ -1,25 +1,28 @@
-#ifndef QQT_MAP_EDITOR_FIN_LIB_QQFDIMG_H
-#define QQT_MAP_EDITOR_FIN_LIB_QQFDIMG_H
+#pragma once
 
 #include <cstdint>
-#include <string>
+#include <iostream>
 #include <vector>
+#include <QImage>
 
 struct QQFDIMG {
   struct Frame {
-    std::string img;
+    QImage image;
     int32_t xOffset;
     int32_t yOffset;
     int32_t w;
     int32_t h;
   };
+  int16_t version;
   int32_t xOffset;
   int32_t yOffset;
   int32_t wOrigin;
   int32_t hOrigin;
-  int32_t nFrames;
-  int32_t nDirections;
+  uint32_t nFrames;
+  uint32_t nDirections;
   std::vector<Frame> frames;
-};
+  QImage previewImage;
 
-#endif // QQT_MAP_EDITOR_FIN_LIB_QQFDIMG_H
+  bool read(std::istream &is);
+  bool write(std::ostream& os);
+};

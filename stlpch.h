@@ -1,19 +1,20 @@
-#ifndef QQT_MAP_EDITOR_FIN__STLPCH_H
-#define QQT_MAP_EDITOR_FIN__STLPCH_H
+#pragma once
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <fstream>
 #include <functional>
+#include <initializer_list>
 #include <iostream>
 #include <map>
 #include <memory>
 #include <ranges>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <strstream>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-#endif // QQT_MAP_EDITOR_FIN__STLPCH_H

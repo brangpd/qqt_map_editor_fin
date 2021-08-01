@@ -74,3 +74,10 @@ Thumbs.db
 CMakeLists.txt.user
 
 cmake-build-*
+build
+out
+
+.idea
+.vscode
+.vs
+CMakeSettings.json

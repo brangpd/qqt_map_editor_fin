@@ -325,7 +325,7 @@
     <addaction name="actionShow_Top"/>
     <addaction name="actionShow_Ground"/>
     <addaction name="actionShow_Grid"/>
-    <addaction name="actionShow_Birth_Points"/>
+    <addaction name="actionShow_Spawn_Points"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuEdit"/>
@@ -342,13 +342,13 @@
    <addaction name="actionUndo"/>
    <addaction name="actionRedo"/>
    <addaction name="separator"/>
-   <addaction name="actionBirth_Point_A"/>
-   <addaction name="actionBirth_Point_B"/>
+   <addaction name="actionSpawn_Point_A"/>
+   <addaction name="actionSpawn_Point_B"/>
    <addaction name="separator"/>
    <addaction name="actionShow_Top"/>
    <addaction name="actionShow_Ground"/>
    <addaction name="actionShow_Grid"/>
-   <addaction name="actionShow_Birth_Points"/>
+   <addaction name="actionShow_Spawn_Points"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <widget class="QDockWidget" name="dockWidget">
@@ -669,7 +669,7 @@
     <string>Ctrl+O</string>
    </property>
   </action>
-  <action name="actionBirth_Point_A">
+  <action name="actionSpawn_Point_A">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -680,7 +680,7 @@
     <string>1</string>
    </property>
   </action>
-  <action name="actionBirth_Point_B">
+  <action name="actionSpawn_Point_B">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -733,7 +733,7 @@
     <string>5</string>
    </property>
   </action>
-  <action name="actionShow_Birth_Points">
+  <action name="actionShow_Spawn_Points">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -815,22 +815,5 @@
  </widget>
  <layoutdefault spacing="6" margin="11"/>
  <resources/>
- <connections>
-  <connection>
-   <sender>actionExit</sender>
-   <signal>triggered()</signal>
-   <receiver>MainWindow</receiver>
-   <slot>close()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>-1</x>
-     <y>-1</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>482</x>
-     <y>383</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
+ <connections/>
 </ui>
