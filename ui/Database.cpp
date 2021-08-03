@@ -37,10 +37,12 @@ public:
   }
   const std::vector<int>& getAllMapElementIds() override { return _allMapElementIds; }
   const QQTMapElement* getMapElementById(int id) override {
+    if (id <= 0) { return nullptr; }
     auto it = _mapElementId2mapElement.find(id);
     return it == _mapElementId2mapElement.end() ? nullptr : &it->second;
   }
   const QQFDIMG* getQqfdimgOfMapElementById(int id) override {
+    if (id <= 0) { return nullptr; }
     auto it = _mapElementId2Qqfdimg.find(id);
     return it == _mapElementId2Qqfdimg.end() ? nullptr : &it->second;
   }

@@ -10,6 +10,11 @@
     <height>816</height>
    </rect>
   </property>
+  <property name="font">
+   <font>
+    <family>微软雅黑</family>
+   </font>
+  </property>
   <property name="mouseTracking">
    <bool>false</bool>
   </property>
@@ -266,6 +271,7 @@
            <height>683</height>
           </rect>
          </property>
+         <layout class="QHBoxLayout" name="horizontalLayout"/>
         </widget>
        </widget>
       </item>
@@ -361,7 +367,7 @@
    <property name="minimumSize">
     <size>
      <width>162</width>
-     <height>218</height>
+     <height>232</height>
     </size>
    </property>
    <property name="maximumSize">

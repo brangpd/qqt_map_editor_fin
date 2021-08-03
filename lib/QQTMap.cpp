@@ -41,16 +41,15 @@ int QQTMap::removeMapElementAt(int x, int y, Layer layer) {
   // 范围清空，两个循环不能颠倒，增加缓存命中率
   for (int i = 0, ie = elem->h; i < ie; ++i) {
     for (int j = 0, je = elem->w; j < je; ++j) {
-      curLayer[y + i][x + j] = 0;
+      if (!isOutOfBound(x + j, y + i)) {
+        curLayer[y + i][x + j] = 0;
+      }
     }
   }
 
   return id;
 }
 bool QQTMap::putMapElementAt(int x, int y, int id, Layer layer) {
-  if (isOutOfBound(x, y)) {
-    return false;
-  }
   if (id <= 0) {
     cerr << "不能添加非正ID元素：" << id << endl;
     return false;
@@ -61,15 +60,28 @@ bool QQTMap::putMapElementAt(int x, int y, int id, Layer layer) {
     return false;
   }
   const QQTMapElement *elem = provider->getMapElementById(id);
+  if (!elem) {
+    cerr << "没有元素数据：" << id << endl;
+    return false;
+  }
+  if (isOutOfBound(x, y) || isOutOfBound(x + elem->w - 1, y + elem->h - 1)) {
+    cerr << QString::asprintf("放置的元素超出范围：ID: %i, x: %i, y: %i, w: %i, h: %i", id, x, y, elem->w, elem->h).data() <<
+        endl;
+    return false;
+  }
   auto &curLayer = _elementIds[layer];
   // 范围置负数
   for (int i = 0, ie = elem->h; i < ie; ++i) {
     for (int j = 0, je = elem->w; j < je; ++j) {
+      if (curLayer[y + i][x + j]) {
+        removeMapElementAt(x + j, y + i, layer);
+      }
       curLayer[y + i][x + j] = -id;
     }
   }
   // 最后置左上为正数
   curLayer[y][x] = id;
+  return true;
 }
 bool QQTMap::read(std::istream &is) {
   if (!is) {
@@ -93,8 +105,8 @@ bool QQTMap::read(std::istream &is) {
     _h = 13;
   }
   else {
-    READT(_w, int16_t);
-    READT(_h, int16_t);
+    READT(_w, int32_t);
+    READT(_h, int32_t);
   }
 
   // 将上下两层每层的地图元素ID都扩展为h*w
@@ -249,8 +261,13 @@ std::pair<int, int> QQTMap::findOrigin(int x, int y, Layer layer) {
   if (const QQTMapElement *elem = provider->getMapElementById(abs(id))) {
     for (int i = 0; i < elem->h; ++i) {
       for (int j = 0; j < elem->w; ++j) {
-        if (_elementIds[layer][y - i][x - j] == -id) {
-          return {x - j, y - i};
+        int curX = x - j;
+        int curY = y - i;
+        if (isOutOfBound(curX, curY)) {
+          continue;
+        }
+        if (_elementIds[layer][curY][curX] == -id) {
+          return {curX, curY};
         }
       }
     }

@@ -111,7 +111,7 @@ bool QQFDIMG::read(std::istream &is) {
 
   return true;
 }
-bool QQFDIMG::write(std::ostream &/*os*/) {
+bool QQFDIMG::write(std::ostream &/*os*/) const {
   cerr << "写QQFDIMG没有实现" << endl;
   return false;
 }

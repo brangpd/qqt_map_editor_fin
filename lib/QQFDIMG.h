@@ -5,14 +5,17 @@
 #include <vector>
 #include <QImage>
 
-struct QQFDIMG {
-  struct Frame {
+struct QQFDIMG
+{
+  struct Frame
+  {
     QImage image;
     int32_t xOffset;
     int32_t yOffset;
     int32_t w;
     int32_t h;
   };
+
   int16_t version;
   int32_t xOffset;
   int32_t yOffset;
@@ -24,5 +27,5 @@ struct QQFDIMG {
   QImage previewImage;
 
   bool read(std::istream &is);
-  bool write(std::ostream& os);
+  bool write(std::ostream &os) const;
 };

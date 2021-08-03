@@ -1,6 +1,5 @@
 #pragma once
 
-struct QQFDIMG;
 class Database
 {
 public:

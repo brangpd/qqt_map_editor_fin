@@ -1,3 +1,4 @@
+#include <bit>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -9,13 +10,19 @@ using namespace std;
 
 int main(int argc, char *argv[]) {
   QApplication a(argc, argv);
+  if constexpr (std::endian::native != std::endian::little) {
+    cerr << "不支持大端机器" << endl;
+    return -1;
+  }
 
 #ifndef _DEBUG
-  auto time = to_string(chrono::system_clock::now().time_since_epoch().count());
-  ofstream log("log" + time + ".txt", ios::trunc);
-  ofstream err("err" + time + ".txt", ios::trunc);
-  std::clog.rdbuf(log.rdbuf());
-  std::cerr.rdbuf(err.rdbuf());
+  auto time = chrono::system_clock::now().time_since_epoch().count();
+  ofstream log("log.txt", ios::app);
+  ofstream err("err.txt", ios::app);
+  clog.rdbuf(log.rdbuf());
+  cerr.rdbuf(err.rdbuf());
+  clog << "\ntime:" << time << endl;
+  cerr << "\ntime:" << time << endl;
 #endif
 
   if (!Database::init()) {

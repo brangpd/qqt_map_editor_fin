@@ -9,7 +9,7 @@
 class QQTMap
 {
 public:
-  enum Layer { kTop, kGround };
+  enum Layer { kTop, kGround, kNone };
 
   bool read(std::istream &is);
   bool write(std::ostream &os);

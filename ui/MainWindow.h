@@ -36,7 +36,6 @@ private:
   bool eventFilter(QObject *watched, QEvent *event) override;
 
   /// 开启或关闭所有用于地图编辑的UI组件
-  /// \param b 开启或关闭
   void setGameMapEditEnabled(bool b) const;
   void changeCity(EQQTCity city) const;
   void changeGameMode(EQQTGameMode mode) const;
@@ -50,6 +49,7 @@ private:
   /// 地图打开或新建完成后，初始化编辑区域
   void openMapEdit();
   void closeMapEdit();
+  std::pair<int, int> getMapAreaSize() const;
   MapElementListWidgetItem* getMapElementListItem(int id) const;
   const std::vector<int>& getAllMapElementIdsByCity(EQQTCity city) const {
     return _allMapElementIdsByCity[static_cast<int>(city) - 1];
@@ -57,8 +57,15 @@ private:
   std::vector<int>& getAllMapElementIdsByCity(EQQTCity city) {
     return _allMapElementIdsByCity[static_cast<int>(city) - 1];
   }
-  void clearSpawnPointSelection();
-  void clearMapElementSelection();
+  void clearSpawnPointSelection() const;
+  void clearMapElementSelection() const;
+  void paintMap(QPainter &painter) const;
+  void paintHoverMapElement(int gridX, int gridY) const;
+  void paintHoverSpawnPoint() const;
+  void put();
+  void remove();
+  static std::pair<int, int> localPixels2Grids(int x, int y);
+  static std::pair<int, int> grids2LocalPixels(int x, int y);
 
 private slots:
   void undo();
@@ -68,6 +75,7 @@ private slots:
   void closeMap();
   bool saveMap();
   bool saveMapAs();
+  bool saveMapAsImage();
   void chooseMapElement(QListWidgetItem *lwi);
 
 private:
@@ -77,10 +85,12 @@ private:
   std::shared_ptr<QQTMap> _qqtMap;
   std::shared_ptr<MapEditData> _mapEditData;
   bool _isDirty{false};
-  MapAreaFrame *_mapAreaFrame{};
+  QFrame *_mapAreaFrame{};
   std::unordered_map<int, MapElementListWidgetItem*> _mapElementId2MapElementListItem;
   std::vector<int> _allMapElementIdsByCity[std::size(allQQTCities)];
   int _mouseGridX{-1}, _mouseGridY{-1};
   int _selectedMapElementId{};
+  int _selectedMapElementLayer{-1};
   bool _isPutting{};
+  bool _isRemoving{};
 };
