@@ -16,20 +16,20 @@ void QQTMap::resize(int width, int height) {
     }
   }
 }
-int QQTMap::removeMapElementAt(int x, int y, Layer layer) {
+bool QQTMap::removeMapElementAt(int x, int y, Layer layer, std::pair<int, std::pair<int, int>> *outRemoved) {
   if (isOutOfBound(x, y)) {
-    return 0;
+    return false;
   }
   auto *provider = QQTMapDatabase::getProvider();
   if (!provider) {
     cerr << "没有数据提供器，无法移除元素" << endl;
-    return 0;
+    return false;
   }
   auto &curLayer = _elementIds[layer];
   int id = curLayer[y][x];
   // 没有元素
   if (id == 0) {
-    return 0;
+    return false;
   }
   // 负数先找到原点
   if (id < 0) {
@@ -37,19 +37,26 @@ int QQTMap::removeMapElementAt(int x, int y, Layer layer) {
     id = -id;
   }
   // 正数表明在原点
-  const QQTMapElement *elem = provider->getMapElementById(id);
-  // 范围清空，两个循环不能颠倒，增加缓存命中率
-  for (int i = 0, ie = elem->h; i < ie; ++i) {
-    for (int j = 0, je = elem->w; j < je; ++j) {
-      if (!isOutOfBound(x + j, y + i)) {
-        curLayer[y + i][x + j] = 0;
+  if (id > 0) {
+    const QQTMapElement *elem = provider->getMapElementById(id);
+    // 范围清空，两个循环不能颠倒，增加缓存命中率
+    for (int i = 0, ie = elem->h; i < ie; ++i) {
+      for (int j = 0, je = elem->w; j < je; ++j) {
+        if (!isOutOfBound(x + j, y + i)) {
+          curLayer[y + i][x + j] = 0;
+        }
       }
     }
+    if (outRemoved) {
+      *outRemoved = {id, {x, y}};
+    }
+    return true;
   }
 
-  return id;
+  return false;
 }
-bool QQTMap::putMapElementAt(int x, int y, int id, Layer layer) {
+bool QQTMap::putMapElementAt(int x, int y, int id, Layer layer,
+                             std::vector<std::pair<int, std::pair<int, int>>> *outRemoved) {
   if (id <= 0) {
     cerr << "不能添加非正ID元素：" << id << endl;
     return false;
@@ -69,12 +76,20 @@ bool QQTMap::putMapElementAt(int x, int y, int id, Layer layer) {
         endl;
     return false;
   }
+  if (outRemoved) {
+    outRemoved->clear();
+  }
   auto &curLayer = _elementIds[layer];
   // 范围置负数
+  pair<int, pair<int, int>> removedBuf;
   for (int i = 0, ie = elem->h; i < ie; ++i) {
     for (int j = 0, je = elem->w; j < je; ++j) {
       if (curLayer[y + i][x + j]) {
-        removeMapElementAt(x + j, y + i, layer);
+        if (removeMapElementAt(x + j, y + i, layer, &removedBuf)) {
+          if (outRemoved) {
+            outRemoved->push_back(removedBuf);
+          }
+        }
       }
       curLayer[y + i][x + j] = -id;
     }
@@ -82,6 +97,63 @@ bool QQTMap::putMapElementAt(int x, int y, int id, Layer layer) {
   // 最后置左上为正数
   curLayer[y][x] = id;
   return true;
+}
+bool QQTMap::putSpawnPointAt(int x, int y, int group, int index, int *outRemovedGroup, int *outRemovedIndex) {
+  if (group != 0 && group != 1) {
+    cerr << "错误的出生组：" << group << endl;
+    return false;
+  }
+  if (isOutOfBound(x, y)) {
+    return false;
+  }
+  int otherGroup = 1 - group;
+  if (removeSpawnPointAt(x, y, group, outRemovedIndex)) {
+    // 删除本组成功
+    if (outRemovedGroup) {
+      *outRemovedGroup = group;
+    }
+  }
+  else if (removeSpawnPointAt(x, y, otherGroup, outRemovedIndex)) {
+    // 删除另一组成功
+    if (outRemovedGroup) {
+      *outRemovedGroup = otherGroup;
+    }
+  }
+  // 放置在当前组
+  auto &curGroup = _spawnPoints[group];
+  if (index == -1) {
+    // 默认放在最后
+    curGroup.emplace_back(x, y);
+  }
+  else {
+    if (index < 0 || index > curGroup.size()) {
+      cerr << "出生点放在错误的序号" << index << endl;
+      return false;
+    }
+    curGroup.emplace(curGroup.begin() + index, x, y);
+  }
+  return false;
+}
+bool QQTMap::removeSpawnPointAt(int x, int y, int group, int *outRemovedIndex) {
+  if (group != 0 && group != 1) {
+    cerr << "错误的出生组：" << group << endl;
+    return false;
+  }
+  if (isOutOfBound(x, y)) {
+    return false;
+  }
+  auto &spawnPoints = _spawnPoints[group];
+  for (int i = 0, ie = spawnPoints.size(); i < ie; ++i) {
+    auto [curX, curY] = spawnPoints[i];
+    if (curX == x && curY == y) {
+      if (outRemovedIndex) {
+        *outRemovedIndex = i;
+      }
+      spawnPoints.erase(spawnPoints.begin() + i);
+      return true;
+    }
+  }
+  return false;
 }
 bool QQTMap::read(std::istream &is) {
   if (!is) {

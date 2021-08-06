@@ -23,9 +23,12 @@ public:
   void resize(int width, int height);
   int getNMaxPlayers() const { return _nMaxPlayers; }
   void setNMaxPlayers(int n) { _nMaxPlayers = n; }
-  const auto &getSpawnPoints(int group) const { return _spawnPoints[group]; }
-  int removeMapElementAt(int x, int y, Layer layer);
-  bool putMapElementAt(int x, int y, int id, Layer layer);
+  const auto& getSpawnPoints(int group) const { return _spawnPoints[group]; }
+  bool removeMapElementAt(int x, int y, Layer layer, std::pair<int, std::pair<int, int>> *outRemoved = nullptr);
+  bool putMapElementAt(int x, int y, int id, Layer layer,
+                       std::vector<std::pair<int, std::pair<int, int>>> *outRemoved = nullptr);
+  bool putSpawnPointAt(int x, int y, int group, int index = -1, int *outRemovedGroup = nullptr, int *outRemovedIndex = nullptr);
+  bool removeSpawnPointAt(int x, int y, int group, int *outRemovedIndex = nullptr);
 
 private:
   int32_t _version{};

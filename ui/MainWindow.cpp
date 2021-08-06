@@ -12,6 +12,7 @@
 #include "EQQTCity.h"
 #include "EQQTGameMode.h"
 #include "MapElementListWidgetItem.h"
+#include "MapEditCommandVariant.h"
 #include "QQFDIMG.h"
 #include "QQTMap.h"
 #include "QQTMapDatabase.h"
@@ -37,6 +38,8 @@ constexpr int kCornerPixels = kGridPixels * 2;
 
 MainWindow::MainWindow()
   : QMainWindow(nullptr), ui(new Ui::MainWindow) {
+  _currentMapEditCommandGroupIt = _mapEditCommandGroups.end();
+
   ui->setupUi(this);
   auto *provider = QQTMapDatabase::getProvider();
   if (provider == nullptr) {
@@ -60,16 +63,22 @@ MainWindow::MainWindow()
   ui->menuEdit->removeAction(ui->actionMove);
 
   // SIGNALS <=> SLOTS
-  connect(ui->comboBoxCity, QOverload<int>::of(&QComboBox::currentIndexChanged),
-          [this](int index) {
-            this->changeCity(static_cast<EQQTCity>(
-              ui->comboBoxCity->itemData(index).toInt()));
-          });
-  connect(ui->comboBoxGameMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
-          [this](int index) {
-            this->changeGameMode(static_cast<EQQTGameMode>(
-              ui->comboBoxGameMode->itemData(index).toInt()));
-          });
+  connect(ui->comboBoxCity, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
+    int value = ui->comboBoxCity->itemData(index).toInt();
+    this->switchCity(static_cast<EQQTCity>(value));
+  });
+  connect(ui->comboBoxGameMode, QOverload<int>::of(&QComboBox::activated), [this](int index) {
+    int value = ui->comboBoxGameMode->itemData(index).toInt();
+    this->changeGameMode(static_cast<EQQTGameMode>(value));
+  });
+  connect(ui->comboBoxMaxPlayers, QOverload<int>::of(&QComboBox::activated), [this](int index) {
+    int n = ui->comboBoxMaxPlayers->itemData(index).toInt();
+    this->changeNMaxPlayers(n);
+  });
+  connect(ui->pushButtonResize, &QPushButton::clicked, [this] {
+    this->resize(ui->spinBoxWidth->value(), ui->spinBoxHeight->value());
+  });
+  connect(ui->pushButtonResetSize, &QPushButton::clicked, this, &MainWindow::resetSize);
   connect(ui->actionUndo, &QAction::triggered, this, &MainWindow::undo);
   connect(ui->actionRedo, &QAction::triggered, this, &MainWindow::redo);
   connect(ui->actionNew_Map, &QAction::triggered, this, &MainWindow::newMap);
@@ -90,6 +99,9 @@ MainWindow::MainWindow()
   for (EQQTGameMode mode : allQQTGameModes) {
     ui->comboBoxGameMode->addItem(toDescription(mode), static_cast<int>(mode));
   }
+  for (int n : {2, 4, 6, 8}) {
+    ui->comboBoxMaxPlayers->addItem(QString::number(n), n);
+  }
   // 程序开始没打开地图，所有编辑操作不可用
   setGameMapEditEnabled(false);
 }
@@ -100,7 +112,7 @@ MainWindow::~MainWindow() {
     delete listItem;
   }
 }
-void MainWindow::changeCity(EQQTCity city) const {
+void MainWindow::switchCity(EQQTCity city) const {
   // 修改场景是UI上的变化，地图本身不修改
   // 这里做的事情是清空原先的地图物件选择列表，并添加新场景的地图物件到列表
   auto *provider = QQTMapDatabase::getProvider();
@@ -125,10 +137,15 @@ void MainWindow::changeCity(EQQTCity city) const {
     }
   }
 }
-void MainWindow::changeGameMode(EQQTGameMode mode) const {
+void MainWindow::changeGameMode(EQQTGameMode mode) {
   // 修改模式是地图的数据
   if (_qqtMap) {
-    _qqtMap->setGameMode(mode);
+    recordImmediateCommand<MapEditChangeGameModeCommand>(_qqtMap, mode);
+  }
+}
+void MainWindow::changeNMaxPlayers(int n) {
+  if (_qqtMap) {
+    recordImmediateCommand<MapEditChangeNMaxPlayersCommand>(_qqtMap, n);
   }
 }
 bool MainWindow::saveMapToFile() {
@@ -292,21 +309,70 @@ void MainWindow::paintHoverSpawnPoint() const {}
 void MainWindow::put() {
   if (_qqtMap && !_qqtMap->isOutOfBound(_mouseGridX, _mouseGridY)) {
     if (_selectedMapElementId > 0) {
-      auto layer = static_cast<QQTMap::Layer>(_selectedMapElementLayer);
-      int removedId = _qqtMap->removeMapElementAt(_mouseGridX, _mouseGridY, layer);
-      _qqtMap->putMapElementAt(_mouseGridX, _mouseGridY, _selectedMapElementId, layer);
+      // 放置元素
+      recordCommand<MapEditPutElementCommand>(_qqtMap, _mouseGridX, _mouseGridY, _selectedMapElementId,
+                                              _selectedMapElementLayer);
+      _mapAreaFrame->update();
+    }
+    else if (_selectedSpawnGroupId != -1) {
+      // 放置出生点
+      recordCommand<MapEditPutSpawnPointCommand>(_qqtMap, _mouseGridX, _mouseGridY, _selectedSpawnGroupId);
       _mapAreaFrame->update();
     }
   }
 }
 void MainWindow::remove() {
   if (_qqtMap && !_qqtMap->isOutOfBound(_mouseGridX, _mouseGridY)) {
+
     _qqtMap->removeMapElementAt(_mouseGridX, _mouseGridY, static_cast<QQTMap::Layer>(_selectedMapElementLayer));
     _mapAreaFrame->update();
   }
 }
-void MainWindow::undo() {}
-void MainWindow::redo() {}
+void MainWindow::resize(int w, int h) {
+  if (_qqtMap) {
+    recordImmediateCommand<MapEditResizeCommand>(_qqtMap, w, h);
+  }
+}
+void MainWindow::resetSize() const {
+  if (_qqtMap) {
+    ui->spinBoxWidth->setValue(_qqtMap->getWidth());
+    ui->spinBoxHeight->setValue(_qqtMap->getHeight());
+  }
+}
+template <class T, class ... Args>
+void MainWindow::recordCommand(Args &&... args) {
+  if (_currentMapEditCommands.empty()) {
+    // 当前命令容器为空，说明当前是新一轮记录动作，删除当前 group 迭代器之后的所有动作。UI刷新后，重做选项不可选。
+    _currentMapEditCommandGroupIt =
+        _mapEditCommandGroups.erase(_currentMapEditCommandGroupIt, _mapEditCommandGroups.end());
+  }
+  // 记录新动作
+  _currentMapEditCommands.emplace_back(make_unique<T>(args...))->exec();
+}
+void MainWindow::endCommand() {
+  _mapEditCommandGroups.emplace_back(_currentMapEditCommands);
+  _currentMapEditCommandGroupIt = _mapEditCommandGroups.end();
+  ui->actionRedo->setEnabled(false);
+  ui->actionUndo->setEnabled(true);
+}
+void MainWindow::undo() {
+  if (_currentMapEditCommandGroupIt != _mapEditCommandGroups.begin()) {
+    (--_currentMapEditCommandGroupIt)->undo();
+    update();
+  }
+  else {
+    cerr << "撤销操作异常，迭代器已到达头部" << endl;
+  }
+}
+void MainWindow::redo() {
+  if (_currentMapEditCommandGroupIt != _mapEditCommandGroups.end()) {
+    (_currentMapEditCommandGroupIt++)->exec();
+    update();
+  }
+  else {
+    cerr << "重做操作异常，迭代器已到达尾部" << endl;
+  }
+}
 MapElementListWidgetItem* MainWindow::getMapElementListItem(int id) const {
   if (auto it = _mapElementId2MapElementListItem.find(id);
     it != _mapElementId2MapElementListItem.end()) {
@@ -483,6 +549,16 @@ void MainWindow::setGameMapEditEnabled(bool b) const {
   ui->pushButtonResize->setEnabled(b);
   ui->pushButtonResetSize->setEnabled(b);
 }
+void MainWindow::paintEvent(QPaintEvent *event) {
+  // undo & redo 选项可选性
+  ui->actionRedo->setEnabled(_currentMapEditCommandGroupIt != _mapEditCommandGroups.end());
+  ui->actionUndo->setEnabled(_currentMapEditCommandGroupIt != _mapEditCommandGroups.begin());
+  // 地图元数据
+  if (_qqtMap) {
+    ui->comboBoxGameMode->setCurrentIndex(static_cast<int>(_qqtMap->getGameMode()) - 1);
+    ui->comboBoxMaxPlayers->setCurrentText(QString::number(_qqtMap->getNMaxPlayers()));
+  }
+}
 void MainWindow::closeEvent(QCloseEvent *event) {
   // 没有确定保存或丢弃拒绝退出
   if (!tipSaveIfNecessary()) {
@@ -490,9 +566,6 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     return;
   }
   QWidget::closeEvent(event);
-}
-void MainWindow::paintEvent(QPaintEvent *event) {
-  QWidget::paintEvent(event);
 }
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
   if (watched == _mapAreaFrame) {
@@ -525,7 +598,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
       }
     case QEvent::MouseMove:
       {
-        auto e = static_cast<QMouseEvent*>(event);
+        auto e = static_cast<QMouseEvent*>(event); // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
         int oldX = _mouseGridX;
         int oldY = _mouseGridY;
         // 获取当前网格坐标
@@ -541,25 +614,26 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
         else {
           statusBar()->clearMessage();
         }
-        // 更新悬浮物体显示
-        _mapAreaFrame->update();
+        // 鼠标点住持续移动时继续放置或移除
         if (_isPutting) {
           put();
         }
         if (_isRemoving) {
           remove();
         }
+        _mapAreaFrame->update();
         // 如果选中了元素：继续放置
         return true;
       }
     case QEvent::MouseButtonPress:
       {
-        auto e = static_cast<QMouseEvent*>(event);
+        auto e = static_cast<QMouseEvent*>(event); // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
         if (e->button() == Qt::LeftButton) {
           // 左键放置
           _isPutting = true;
           put();
         }
+          // 两者互斥，用else，不允许一起出现
         else if (e->button() == Qt::RightButton) {
           // 右键移除
           _isRemoving = true;
@@ -569,7 +643,10 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
       }
     case QEvent::MouseButtonRelease:
       {
-        _isPutting = _isRemoving = false;
+        if (_isPutting || _isRemoving) {
+          _isPutting = _isRemoving = false;
+          endCommand();
+        }
         return true;
       }
     }

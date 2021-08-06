@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1000</width>
-    <height>816</height>
+    <height>827</height>
    </rect>
   </property>
   <property name="font">
@@ -151,26 +151,6 @@
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
-          <item>
-           <property name="text">
-            <string>2</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>4</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>6</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>8</string>
-           </property>
-          </item>
          </widget>
         </item>
         <item row="0" column="8">
@@ -664,7 +644,7 @@
     <string>重做</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+Shift+Z, Ctrl+Y</string>
+    <string>Ctrl+Shift+Z</string>
    </property>
   </action>
   <action name="actionOpen_Map">
