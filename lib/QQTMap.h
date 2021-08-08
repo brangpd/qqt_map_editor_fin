@@ -6,10 +6,10 @@
 
 #include "EQQTGameMode.h"
 
-class QQTMap
+class QQTMap final
 {
 public:
-  enum Layer { kTop, kGround, kNone };
+  enum Layer { kTop = 0, kGround = 1, kNone = -1 };
 
   bool read(std::istream &is);
   bool write(std::ostream &os);
@@ -27,7 +27,8 @@ public:
   bool removeMapElementAt(int x, int y, Layer layer, std::pair<int, std::pair<int, int>> *outRemoved = nullptr);
   bool putMapElementAt(int x, int y, int id, Layer layer,
                        std::vector<std::pair<int, std::pair<int, int>>> *outRemoved = nullptr);
-  bool putSpawnPointAt(int x, int y, int group, int index = -1, int *outRemovedGroup = nullptr, int *outRemovedIndex = nullptr);
+  bool putSpawnPointAt(int x, int y, int group, int index = -1, int *outRemovedGroup = nullptr,
+                       int *outRemovedIndex = nullptr);
   bool removeSpawnPointAt(int x, int y, int group, int *outRemovedIndex = nullptr);
 
 private:

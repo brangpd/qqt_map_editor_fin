@@ -6,13 +6,35 @@
 using namespace std;
 
 #include "DefineIOMacros.h"
+
+namespace {
+std::vector<int> getSpecials(EQQTGameMode mode) {
+  switch (mode) {
+  case EQQTGameMode::bun: return {8009, 8010};
+  case EQQTGameMode::machine: return {13016, 13017};
+  case EQQTGameMode::sculpture: return {12008, 12009};
+  case EQQTGameMode::tank: return {19030, 19031};
+  default: return {};
+  }
+}
+}
+
 void QQTMap::resize(int width, int height) {
   _w = static_cast<uint16_t>(width);
   _h = static_cast<uint16_t>(height);
-  for (std::vector<std::vector<int32_t>> &layer : _elementIds) {
-    layer.resize(_h);
-    for (std::vector<int32_t> &row : layer) {
-      row.resize(_w);
+  auto capacityH = _elementIds[0].size();
+  // 只改大不改小，方便撤回修改
+  if (capacityH < _h) {
+    for (auto &layer : _elementIds) {
+      layer.resize(_h);
+    }
+  }
+  auto capacityW = _elementIds[0][0].size();
+  if (capacityW < _w) {
+    for (auto &layer : _elementIds) {
+      for (std::vector<int32_t> &row : layer) {
+        row.resize(_w);
+      }
     }
   }
 }
@@ -22,7 +44,7 @@ bool QQTMap::removeMapElementAt(int x, int y, Layer layer, std::pair<int, std::p
   }
   auto *provider = QQTMapDatabase::getProvider();
   if (!provider) {
-    cerr << "没有数据提供器，无法移除元素" << endl;
+    qCritical() << "没有数据提供器，无法移除元素";
     return false;
   }
   auto &curLayer = _elementIds[layer];
@@ -58,22 +80,21 @@ bool QQTMap::removeMapElementAt(int x, int y, Layer layer, std::pair<int, std::p
 bool QQTMap::putMapElementAt(int x, int y, int id, Layer layer,
                              std::vector<std::pair<int, std::pair<int, int>>> *outRemoved) {
   if (id <= 0) {
-    cerr << "不能添加非正ID元素：" << id << endl;
+    qCritical() << "不能添加非正ID元素" << id;
     return false;
   }
   auto *provider = QQTMapDatabase::getProvider();
   if (!provider) {
-    cerr << "没有数据提供器，无法添加元素" << endl;
+    qCritical() << "没有数据提供器，无法添加元素";
     return false;
   }
   const QQTMapElement *elem = provider->getMapElementById(id);
   if (!elem) {
-    cerr << "没有元素数据：" << id << endl;
+    qCritical("没有元素%i的数据", id);
     return false;
   }
   if (isOutOfBound(x, y) || isOutOfBound(x + elem->w - 1, y + elem->h - 1)) {
-    cerr << QString::asprintf("放置的元素超出范围：ID: %i, x: %i, y: %i, w: %i, h: %i", id, x, y, elem->w, elem->h).data() <<
-        endl;
+    qCritical("放置的元素超出范围：ID: %i, x: %i, y: %i, w: %i, h: %i", id, x, y, elem->w, elem->h);
     return false;
   }
   if (outRemoved) {
@@ -100,10 +121,15 @@ bool QQTMap::putMapElementAt(int x, int y, int id, Layer layer,
 }
 bool QQTMap::putSpawnPointAt(int x, int y, int group, int index, int *outRemovedGroup, int *outRemovedIndex) {
   if (group != 0 && group != 1) {
-    cerr << "错误的出生组：" << group << endl;
+    qCritical() << "错误的出生组" << group;
     return false;
   }
   if (isOutOfBound(x, y)) {
+    return false;
+  }
+  auto &curGroup = _spawnPoints[group];
+  if (index < -1 || index > static_cast<int>(curGroup.size())) {
+    qCritical("出生点放在错误的序号%i，当前出生组%i大小为%llu", index, group, curGroup.size());
     return false;
   }
   int otherGroup = 1 - group;
@@ -120,23 +146,18 @@ bool QQTMap::putSpawnPointAt(int x, int y, int group, int index, int *outRemoved
     }
   }
   // 放置在当前组
-  auto &curGroup = _spawnPoints[group];
   if (index == -1) {
     // 默认放在最后
     curGroup.emplace_back(x, y);
   }
   else {
-    if (index < 0 || index > curGroup.size()) {
-      cerr << "出生点放在错误的序号" << index << endl;
-      return false;
-    }
     curGroup.emplace(curGroup.begin() + index, x, y);
   }
-  return false;
+  return true;
 }
 bool QQTMap::removeSpawnPointAt(int x, int y, int group, int *outRemovedIndex) {
   if (group != 0 && group != 1) {
-    cerr << "错误的出生组：" << group << endl;
+    qCritical() << "错误的出生组" << group;
     return false;
   }
   if (isOutOfBound(x, y)) {
@@ -162,7 +183,7 @@ bool QQTMap::read(std::istream &is) {
   READT(_version, int32_t);
   switch (_version) {
   default:
-    cerr << "不支持的地图版本：" << _version << endl;
+    qInfo() << "不支持的地图版本：" << _version;
     return false;
   case 3:
   case 4:
@@ -233,15 +254,19 @@ bool QQTMap::read(std::istream &is) {
   }
 
   // 这些是用于一些特殊模式下，标识属于双方队伍各自的特殊地图元素，例如包子铺、雕塑塔、机械大炮、糖客战基地等
+  // 读进来统一作为顶层元素对待，写出的时候特殊处理
   int32_t nSpecialPoint;
   READT(nSpecialPoint, int32_t);
-  _specialPoints.clear();
-  _specialPoints.reserve(nSpecialPoint);
+  auto specials = getSpecials(_gameMode);
   for (int i = 0; i < nSpecialPoint; ++i) {
+    if (i >= 2) {
+      qWarning("特殊元素超过2个");
+      break;
+    }
     int16_t c, r;
     READT(r, int16_t);
     READT(c, int16_t);
-    _specialPoints.emplace_back(c, r);
+    putMapElementAt(c, r, specials[i], kTop);
   }
 
   return true;
@@ -249,7 +274,7 @@ bool QQTMap::read(std::istream &is) {
 bool QQTMap::write(std::ostream &os) {
   auto dataProvider = QQTMapDatabase::getProvider();
   if (dataProvider == nullptr) {
-    cerr << "没有数据提供器" << endl;
+    qCritical() << "没有数据提供器";
     return false;
   }
   WRITET(/*version*/ 4, int32_t);
@@ -259,6 +284,14 @@ bool QQTMap::write(std::ostream &os) {
   WRITET(_w, int32_t);
   WRITET(_h, int32_t);
 
+  auto specialIds = getSpecials(_gameMode);
+  if (specialIds.empty()) {
+    _specialPoints.clear();
+  }
+  else {
+    _specialPoints.resize(2);
+  }
+
   for (int k = 0; k < 3; ++k) {
     for (int i = 0; i < _h; ++i) {
       for (int j = 0; j < _w; ++j) {
@@ -267,7 +300,17 @@ bool QQTMap::write(std::ostream &os) {
         }
         else {
           int id = _elementIds[kTop][i][j];
-          if (const QQTMapElement *elem = dataProvider->getMapElementById(id);
+          if (id == specialIds[0]) {
+            _specialPoints[0] = {j, i};
+            WRITET(0, int32_t);
+            continue;
+          }
+          if (id == specialIds[1]) {
+            _specialPoints[1] = {j, i};
+            WRITET(0, int32_t);
+            continue;
+          }
+          if (auto elem = dataProvider->getMapElementById(id);
             elem && (elem->canBeHidden() ^ (k == 1))) {
             WRITET(id, int32_t);
           }
@@ -310,6 +353,17 @@ bool QQTMap::write(std::ostream &os) {
     }
   }
 
+  WRITET(_specialPoints.size(), int32_t);
+  for (int i = 0, ie = _specialPoints.size(); i < ie; ++i) {
+    if (i >= 2) {
+      qWarning("特殊元素超过2个");
+      break;
+    }
+    auto [x, y] = _specialPoints[i];
+    WRITET(y, int16_t);
+    WRITET(x, int16_t);
+  }
+
   return true;
 }
 int QQTMap::getMapElementId(int x, int y, Layer layer) const {
@@ -320,7 +374,7 @@ std::pair<int, int> QQTMap::findOrigin(int x, int y, Layer layer) {
   // 这里用来获取任意格子中包含的元素的左上角位置。需要通过数据提供器拿到元素的属性：长、宽
   auto provider = QQTMapDatabase::getProvider();
   if (provider == nullptr) {
-    cerr << "没有数据提供器" << endl;
+    qCritical() << "没有数据提供器";
     return {-1, -1};
   }
   if (isOutOfBound(x, y)) {

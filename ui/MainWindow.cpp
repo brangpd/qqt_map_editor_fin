@@ -34,18 +34,25 @@ QString getPngFileFilter() {
 constexpr int kGridPixels = 40;
 // 在画图区域周围添加80像素边界
 constexpr int kCornerPixels = kGridPixels * 2;
+// 两个出生组的颜色
+constexpr Qt::GlobalColor colorsForSpawnGroup[2] = {Qt::red, Qt::blue};
 } // namespace
 
 MainWindow::MainWindow()
-  : QMainWindow(nullptr), ui(new Ui::MainWindow) {
+  : QMainWindow(nullptr),
+    ui(new Ui::MainWindow) {
+  ui->setupUi(this);
+  _spawnGroupAction[0] = ui->actionSpawn_Point_1;
+  _spawnGroupAction[1] = ui->actionSpawn_Point_2;
+  _mapElementListWidget[QQTMap::kTop] = ui->listWidgetTop;
+  _mapElementListWidget[QQTMap::kGround] = ui->listWidgetGround;
+
   _currentMapEditCommandGroupIt = _mapEditCommandGroups.end();
 
-  ui->setupUi(this);
   auto *provider = QQTMapDatabase::getProvider();
   if (provider == nullptr) {
     // provider 目前一旦初始化成功，全局不变
-    cerr << "没有数据提供器，初始化MainWindow失败" << endl;
-    exit(1);
+    qFatal("没有数据提供器，初始化MainWindow失败");
   }
   for (int id : provider->getAllMapElementIds()) {
     EQQTCity city = QQTMapElement::getCity(id);
@@ -90,20 +97,27 @@ MainWindow::MainWindow()
   connect(ui->actionExit, &QAction::triggered, this, &MainWindow::close);
   connect(ui->listWidgetTop, &QListWidget::itemClicked, this, &MainWindow::chooseMapElement);
   connect(ui->listWidgetGround, &QListWidget::itemClicked, this, &MainWindow::chooseMapElement);
+  connect(ui->actionSpawn_Point_1, &QAction::triggered, [this](bool clicked) {
+    chooseSpawnGroup(clicked ? 0 : -1);
+  });
+  connect(ui->actionSpawn_Point_2, &QAction::triggered, [this](bool clicked) {
+    chooseSpawnGroup(clicked ? 1 : -1);
+  });
 
   // 初始化city下拉菜单，同时会触发 city 列表的 currentIndexChanged 的更新
+  ui->comboBoxCity->clear();
   for (EQQTCity city : allQQTCities) {
     ui->comboBoxCity->addItem(toDescription(city), static_cast<int>(city));
   }
   // 初始化游戏模式下拉菜单
+  ui->comboBoxGameMode->clear();
   for (EQQTGameMode mode : allQQTGameModes) {
     ui->comboBoxGameMode->addItem(toDescription(mode), static_cast<int>(mode));
   }
+  ui->comboBoxMaxPlayers->clear();
   for (int n : {2, 4, 6, 8}) {
     ui->comboBoxMaxPlayers->addItem(QString::number(n), n);
   }
-  // 程序开始没打开地图，所有编辑操作不可用
-  setGameMapEditEnabled(false);
 }
 MainWindow::~MainWindow() {
   delete ui;
@@ -112,99 +126,103 @@ MainWindow::~MainWindow() {
     delete listItem;
   }
 }
+void MainWindow::MapEditCommandGroup::exec() {
+  for (auto &&cmd : _group) {
+    cmd->exec();
+  }
+}
+void MainWindow::MapEditCommandGroup::undo() {
+  for (auto &&cmd : _group | views::reverse) {
+    cmd->undo();
+  }
+}
 void MainWindow::switchCity(EQQTCity city) const {
   // 修改场景是UI上的变化，地图本身不修改
   // 这里做的事情是清空原先的地图物件选择列表，并添加新场景的地图物件到列表
   auto *provider = QQTMapDatabase::getProvider();
-  for (QListWidget *lw : {ui->listWidgetTop, ui->listWidgetGround}) {
+  for (QListWidget *lw : _mapElementListWidget) {
     // 手动移除，为了重复利用 QListItem* 不能直接 clear()
     while (lw->count()) {
       lw->takeItem(0);
     }
   }
   for (int id : getAllMapElementIdsByCity(city)) {
-    if (const QQTMapElement *elem = provider->getMapElementById(id)) {
-      if (QListWidgetItem *listItem = getMapElementListItem(id)) {
-        (elem->isGround() ? ui->listWidgetGround : ui->listWidgetTop)
-            ->addItem(listItem);
-      }
-      else {
-        cerr << "列表元素不存在：" << id << endl;
-      }
+    const QQTMapElement *elem = provider->getMapElementById(id);
+    if (!elem) {
+      qWarning("在数据提供器中元素%i不存在", id);
+      continue;
     }
-    else {
-      cerr << "在数据提供器中元素不存在：" << id << endl;
+    QListWidgetItem *listItem = getMapElementListItem(id);
+    if (!listItem) {
+      qWarning("元素%i列表项不存在", id);
+      continue;
     }
+    (elem->isGround() ? ui->listWidgetGround : ui->listWidgetTop)
+        ->addItem(listItem);
   }
 }
 void MainWindow::changeGameMode(EQQTGameMode mode) {
   // 修改模式是地图的数据
   if (_qqtMap) {
-    recordImmediateCommand<MapEditChangeGameModeCommand>(_qqtMap, mode);
+    recordImmediateCommand<MapEditChangeGameModeCommand>(*_qqtMap, mode);
   }
 }
 void MainWindow::changeNMaxPlayers(int n) {
   if (_qqtMap) {
-    recordImmediateCommand<MapEditChangeNMaxPlayersCommand>(_qqtMap, n);
+    recordImmediateCommand<MapEditChangeNMaxPlayersCommand>(*_qqtMap, n);
   }
 }
 bool MainWindow::saveMapToFile() {
   if (!_qqtMap) {
-    cerr << "地图为空，无法保存到文件" << endl;
+    qCritical() << "地图为空，无法保存到文件";
     return false;
   }
   ostringstream oss(ios::binary);
   if (!_qqtMap->write(oss)) {
-    cerr << "写出地图二进制数据到内存失败" << endl;
+    qCritical() << "写出地图二进制数据到内存失败";
     return false;
   }
 
   QFile file(_filename);
   if (!file.open(QIODevice::WriteOnly)) {
-    cerr << "无法打开文件" << _filename.data() << endl;
+    qCritical() << "无法打开文件" << _filename;
     return false;
   }
   auto dataView = oss.view();
   if (file.write(dataView.data(), dataView.size()) != dataView.size()) {
-    cerr << "写出地图字节数与原数据不匹配" << endl;
+    qCritical() << "写出地图字节数与原数据不匹配";
     return false;
   }
-  _isDirty = false;
+  // 清空命令buf
+  resetCommands();
+
   return true;
 }
-void MainWindow::clearSpawnPointSelection() const {
-  ui->actionSpawn_Point_A->setChecked(false);
-  ui->actionSpawn_Point_B->setChecked(false);
+void MainWindow::clearSpawnPointSelection() {
+  ui->actionSpawn_Point_1->setChecked(false);
+  ui->actionSpawn_Point_2->setChecked(false);
+  _selectedSpawnGroupId = -1;
 }
-void MainWindow::clearMapElementSelection() const {
+void MainWindow::clearMapElementSelection() {
   ui->listWidgetTop->clearSelection();
   ui->listWidgetGround->clearSelection();
+  _selectedMapElementId = 0;
+  _selectedMapElementLayer = -1;
 }
-void MainWindow::paintMap(QPainter &painter) const {
+void MainWindow::paintMap(QPaintDevice &device) const {
   if (!_qqtMap) {
     return;
   }
   const auto &map = *_qqtMap;
-  auto *dataProvider = QQTMapDatabase::getProvider();
-
   // 从下到上：地板、网格、顶层、出生点
   // 底层
   bool shouldPaintGround = ui->actionShow_Ground->isChecked();
   if (shouldPaintGround) {
-    // 从上往下每一行，先画上行
-    for (int r = 0, re = map.getHeight(); r < re; ++r) {
-      // 从右往左每一列，先画右列
-      for (int c = map.getWidth() - 1, ce = 0; c >= ce; --c) {
-        int id = map.getMapElementId(c, r, QQTMap::kGround);
+    for (int i = 0, ie = map.getHeight(); i < ie; ++i) {
+      for (int j = map.getWidth() - 1; j >= 0; --j) {
+        int id = map.getMapElementId(j, i, QQTMap::kGround);
         if (id > 0) {
-          const QQTMapElement *elem = dataProvider->getMapElementById(id);
-          const QQFDIMG *qqfdimg = dataProvider->getQqfdimgOfMapElementById(id);
-          if (elem && qqfdimg) {
-            painter.drawImage(
-                kCornerPixels + c * kGridPixels - elem->xOffset,
-                kCornerPixels + r * kGridPixels - elem->yOffset,
-                qqfdimg->previewImage);
-          }
+          paintMapElement(device, j, i, id, QQTMap::kGround);
         }
       }
     }
@@ -212,25 +230,7 @@ void MainWindow::paintMap(QPainter &painter) const {
   // 网格
   bool shouldPaintGrid = ui->actionShow_Grid->isChecked();
   if (shouldPaintGrid) {
-    auto oldPen = painter.pen();
-    painter.setPen(Qt::black);
-    // 横线
-    for (int i = 0, ie = map.getHeight(); i <= ie; ++i) {
-      painter.drawLine(
-          kCornerPixels,
-          kCornerPixels + kGridPixels * i,
-          kCornerPixels + kGridPixels * map.getWidth(),
-          kCornerPixels + kGridPixels * i);
-    }
-    // 竖线
-    for (int i = 0, ie = map.getWidth(); i <= ie; ++i) {
-      painter.drawLine(
-          kCornerPixels + kGridPixels * i,
-          kCornerPixels,
-          kCornerPixels + kGridPixels * i,
-          kCornerPixels + kGridPixels * map.getHeight());
-    }
-    painter.setPen(oldPen);
+    paintGrid(device, _qqtMap->getWidth(), _qqtMap->getHeight());
   }
   // 顶层
   bool shouldPaintTop = ui->actionShow_Top->isChecked();
@@ -239,12 +239,7 @@ void MainWindow::paintMap(QPainter &painter) const {
       for (int j = map.getWidth() - 1; j >= 0; --j) {
         int id = map.getMapElementId(j, i, QQTMap::kTop);
         if (id > 0) {
-          const QQTMapElement *elem = dataProvider->getMapElementById(id);
-          const QQFDIMG *qqfdimg = dataProvider->getQqfdimgOfMapElementById(id);
-          painter.drawImage(
-              kCornerPixels + j * kGridPixels - elem->xOffset,
-              kCornerPixels + i * kGridPixels - elem->yOffset,
-              qqfdimg->previewImage);
+          paintMapElement(device, j, i, id, QQTMap::kTop);
         }
       }
     }
@@ -252,44 +247,83 @@ void MainWindow::paintMap(QPainter &painter) const {
   // 出生点
   bool shouldPaintSpawnPoints = ui->actionShow_Spawn_Points->isChecked();
   if (shouldPaintSpawnPoints) {
-    constexpr int kCircleCorner = 8;
-    constexpr int kCircleSize = kGridPixels - kCircleCorner * 2;
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    // 数字用的字体的样式
-    auto font = painter.font();
-    font.setBold(true);
-    font.setPixelSize(kGridPixels);
-    painter.setFont(font);
-
-    // 画圈的笔
-    QPen circlePen(QBrush(Qt::gray), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-    // 画数字的笔
-    QPen numberPen(Qt::white);
-
-    // 两个出生组的颜色
-    Qt::GlobalColor colorsForGroup[2] = {Qt::red, Qt::blue};
-
     // 两个组
     for (int i = 0; i < 2; ++i) {
-      painter.setBrush(colorsForGroup[i]);
       auto &&spawnPoints = map.getSpawnPoints(i);
       for (int j = 0, je = static_cast<int>(spawnPoints.size()); j < je; ++j) {
         auto [x, y] = spawnPoints[j];
-        QRect rect(
-            kCornerPixels + x * kGridPixels + kCircleCorner,
-            kCornerPixels + y * kGridPixels + kCircleCorner,
-            kCircleSize,
-            kCircleSize);
-        painter.setPen(circlePen);
-        painter.drawEllipse(rect);
-        painter.setPen(numberPen);
-        painter.drawText(rect, Qt::AlignCenter, QString::number(j + 1));
+        paintSpawnPoint(*_mapAreaFrame, x, y, i, j);
       }
     }
   }
 }
-void MainWindow::paintHoverMapElement(int gridX, int gridY) const {
+void MainWindow::paintGrid(QPaintDevice &device, int w, int h) {
+  QPainter painter(&device);
+  painter.setPen(Qt::black);
+  // 横线
+  for (int i = 0, ie = h; i <= ie; ++i) {
+    painter.drawLine(
+        kCornerPixels,
+        kCornerPixels + kGridPixels * i,
+        kCornerPixels + kGridPixels * w,
+        kCornerPixels + kGridPixels * i);
+  }
+  // 竖线
+  for (int i = 0, ie = w; i <= ie; ++i) {
+    painter.drawLine(
+        kCornerPixels + kGridPixels * i,
+        kCornerPixels,
+        kCornerPixels + kGridPixels * i,
+        kCornerPixels + kGridPixels * h);
+  }
+}
+void MainWindow::paintMapElement(QPaintDevice &device, int x, int y, int id, int layer, bool transparent) {
+  QPainter painter(&device);
+  if (transparent) {
+    painter.setOpacity(0.5);
+  }
+  auto dataProvider = QQTMapDatabase::getProvider();
+  const QQTMapElement *elem = dataProvider->getMapElementById(id);
+  const QQFDIMG *qqfdimg = dataProvider->getQqfdimgOfMapElementById(id);
+  if (elem && qqfdimg) {
+    painter.drawImage(
+        kCornerPixels + x * kGridPixels - elem->xOffset,
+        kCornerPixels + y * kGridPixels - elem->yOffset,
+        qqfdimg->previewImage);
+  }
+}
+void MainWindow::paintSpawnPoint(QPaintDevice &device, int x, int y, int group, int index, bool transparent) {
+  constexpr int kCircleCorner = 8;
+  constexpr int kCircleSize = kGridPixels - kCircleCorner * 2;
+  QPainter painter(&device);
+  if (transparent) {
+    painter.setOpacity(0.5);
+  }
+  painter.setRenderHint(QPainter::Antialiasing);
+  // 数字用的字体的样式
+  auto font = painter.font();
+  font.setBold(true);
+  font.setPixelSize(kGridPixels / 2);
+  painter.setFont(font);
+  // 画圈的笔
+  QPen circlePen(QBrush(Qt::gray), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+  // 画数字的笔
+  QPen numberPen(Qt::white);
+  painter.setBrush(colorsForSpawnGroup[group]);
+  QRect rect(
+      kCornerPixels + x * kGridPixels + kCircleCorner,
+      kCornerPixels + y * kGridPixels + kCircleCorner,
+      kCircleSize,
+      kCircleSize);
+  painter.setPen(circlePen);
+  painter.drawEllipse(rect);
+  painter.setPen(numberPen);
+  if (index != -1) {
+    int number = index + 1;
+    painter.drawText(rect, Qt::AlignCenter, QString::number(number));
+  }
+}
+void MainWindow::paintHoverMapElement() const {
   if (_selectedMapElementId <= 0) {
     return;
   }
@@ -300,44 +334,62 @@ void MainWindow::paintHoverMapElement(int gridX, int gridY) const {
     const QImage &img = qqfdimg->previewImage;
     QPainter painter(_mapAreaFrame);
     // 网格转像素
-    auto [px, py] = grids2LocalPixels(gridX, gridY);
+    auto [px, py] = grids2LocalPixels(_mouseGridX, _mouseGridY);
     painter.setOpacity(0.5);
     painter.drawImage(px - elem->xOffset, py - elem->yOffset, img);
   }
 }
-void MainWindow::paintHoverSpawnPoint() const {}
+void MainWindow::paintHoverSpawnPoint() const {
+  if (_selectedSpawnGroupId != 0 && _selectedSpawnGroupId != 1) {
+    return;
+  }
+  QPainter painter(_mapAreaFrame);
+  painter.setOpacity(0.5);
+}
 void MainWindow::put() {
   if (_qqtMap && !_qqtMap->isOutOfBound(_mouseGridX, _mouseGridY)) {
     if (_selectedMapElementId > 0) {
-      // 放置元素
-      recordCommand<MapEditPutElementCommand>(_qqtMap, _mouseGridX, _mouseGridY, _selectedMapElementId,
-                                              _selectedMapElementLayer);
-      _mapAreaFrame->update();
+      // 判断元素右/下出界
+      const QQTMapElement *elem = QQTMapDatabase::getProvider()->getMapElementById(_selectedMapElementId);
+      if (elem && !_qqtMap->isOutOfBound(_mouseGridX + elem->w - 1, _mouseGridY + elem->h - 1)) {
+        // 放置元素
+        recordCommand<MapEditPutElementCommand>(*_qqtMap, _mouseGridX, _mouseGridY, _selectedMapElementId,
+                                                _selectedMapElementLayer);
+      }
     }
     else if (_selectedSpawnGroupId != -1) {
-      // 放置出生点
-      recordCommand<MapEditPutSpawnPointCommand>(_qqtMap, _mouseGridX, _mouseGridY, _selectedSpawnGroupId);
-      _mapAreaFrame->update();
+      recordCommand<MapEditPutSpawnPointCommand>(*_qqtMap, _mouseGridX, _mouseGridY, _selectedSpawnGroupId);
     }
   }
 }
 void MainWindow::remove() {
   if (_qqtMap && !_qqtMap->isOutOfBound(_mouseGridX, _mouseGridY)) {
-
-    _qqtMap->removeMapElementAt(_mouseGridX, _mouseGridY, static_cast<QQTMap::Layer>(_selectedMapElementLayer));
-    _mapAreaFrame->update();
+    if (_selectedMapElementLayer != -1) {
+      // 移除元素
+      recordCommand<MapEditRemoveElementCommand>(*_qqtMap, _mouseGridX, _mouseGridY, _selectedMapElementId,
+                                                 _selectedMapElementLayer);
+    }
+    else if (_selectedSpawnGroupId != -1) {
+      // 移除出生点
+      recordCommand<MapEditRemoveSpawnPointCommand>(*_qqtMap, _mouseGridX, _mouseGridY, _selectedSpawnGroupId);
+    }
   }
 }
 void MainWindow::resize(int w, int h) {
   if (_qqtMap) {
-    recordImmediateCommand<MapEditResizeCommand>(_qqtMap, w, h);
+    recordImmediateCommand<MapEditResizeCommand>(*_qqtMap, w, h);
   }
 }
 void MainWindow::resetSize() const {
+  // 仅重置UI显示
   if (_qqtMap) {
     ui->spinBoxWidth->setValue(_qqtMap->getWidth());
     ui->spinBoxHeight->setValue(_qqtMap->getHeight());
   }
+}
+void MainWindow::chooseSpawnGroup(int group) {
+  clearMapElementSelection();
+  _selectedSpawnGroupId = group;
 }
 template <class T, class ... Args>
 void MainWindow::recordCommand(Args &&... args) {
@@ -348,12 +400,18 @@ void MainWindow::recordCommand(Args &&... args) {
   }
   // 记录新动作
   _currentMapEditCommands.emplace_back(make_unique<T>(args...))->exec();
+  update();
+  _mapAreaFrame->update();
 }
 void MainWindow::endCommand() {
   _mapEditCommandGroups.emplace_back(_currentMapEditCommands);
   _currentMapEditCommandGroupIt = _mapEditCommandGroups.end();
-  ui->actionRedo->setEnabled(false);
-  ui->actionUndo->setEnabled(true);
+}
+void MainWindow::resetCommands() {
+  _mapEditCommandGroups.clear();
+  _currentMapEditCommands.clear();
+  _currentMapEditCommandGroupIt = _mapEditCommandGroups.end();
+  update();
 }
 void MainWindow::undo() {
   if (_currentMapEditCommandGroupIt != _mapEditCommandGroups.begin()) {
@@ -361,7 +419,7 @@ void MainWindow::undo() {
     update();
   }
   else {
-    cerr << "撤销操作异常，迭代器已到达头部" << endl;
+    qCritical() << "撤销操作异常，迭代器已到达头部";
   }
 }
 void MainWindow::redo() {
@@ -370,7 +428,7 @@ void MainWindow::redo() {
     update();
   }
   else {
-    cerr << "重做操作异常，迭代器已到达尾部" << endl;
+    qCritical() << "重做操作异常，迭代器已到达尾部";
   }
 }
 MapElementListWidgetItem* MainWindow::getMapElementListItem(int id) const {
@@ -397,34 +455,25 @@ void MainWindow::openMapEdit() {
   ui->comboBoxMaxPlayers->setCurrentText(QString::number(_qqtMap->getNMaxPlayers()));
   ui->comboBoxGameMode->setCurrentIndex(static_cast<int>(_qqtMap->getGameMode()) - 1);
 
-  // 建立新绘图区域
-  delete _mapAreaFrame;
   if (!_qqtMap) {
-    cerr << "打开地图编辑区域失败：地图为空" << endl;
+    qCritical() << "打开地图编辑区域失败：地图为空";
     return;
   }
+  // 建立新绘图区域
+  delete _mapAreaFrame;
   _mapAreaFrame = new QFrame(this);
   // 捕捉该对象的绘图事件，因为其绘图需要MainWindow中ui的信息：各个层是否绘制，以及地图数据
   _mapAreaFrame->installEventFilter(this);
   _mapAreaFrame->setMouseTracking(true);
   ui->scrollAreaMapArea->setWidget(_mapAreaFrame);
 
-  // 开启操作UI
-  setGameMapEditEnabled(true);
-
   // 更新GUI绘制
   update();
 }
-void MainWindow::closeMapEdit() {
-  // 删除旧绘图区域
-  delete _mapAreaFrame;
-  _mapAreaFrame = nullptr;
-  // 关闭操作UI
-  setGameMapEditEnabled(false);
-}
 void MainWindow::newMap() {
-  if (tipSaveIfNecessary()) {
+  if (closeMap()) {
     _qqtMap = make_shared<QQTMap>();
+    _filename.clear();
     // 加载一些默认参数
     _qqtMap->setGameMode(EQQTGameMode::normal);
     _qqtMap->resize(15, 13);
@@ -434,7 +483,7 @@ void MainWindow::newMap() {
   }
 }
 void MainWindow::openMap() {
-  if (tipSaveIfNecessary()) {
+  if (closeMap()) {
     QString filename = QFileDialog::getOpenFileName(
         this, QStringLiteral("打开地图"), QString(), ::getMapFileFilter());
     if (filename.isEmpty()) {
@@ -453,11 +502,19 @@ void MainWindow::openMap() {
     openMapEdit();
   }
 }
-void MainWindow::closeMap() {
+bool MainWindow::closeMap() {
   if (tipSaveIfNecessary()) {
     _filename.clear();
-    closeMapEdit();
+    // 删除旧绘图区域
+    delete _mapAreaFrame;
+    _mapAreaFrame = nullptr;
+    // 删除地图
+    _qqtMap.reset();
+    // 删除UNDO buf
+    resetCommands();
+    return true;
   }
+  return false;
 }
 bool MainWindow::saveMap() {
   if (_filename.isEmpty()) {
@@ -481,12 +538,11 @@ bool MainWindow::saveMapAsImage() {
   if (!filename.isEmpty()) {
     auto [sizeW, sizeH] = getMapAreaSize();
     QImage image(sizeW, sizeH, QImage::Format_ARGB32);
-    QPainter painter(&image);
-    this->paintMap(painter);
+    this->paintMap(image);
     if (image.save(filename)) {
       return true;
     }
-    cerr << "保存为图片失败" << endl;
+    qCritical() << "保存为图片失败";
     return false;
   }
   return false;
@@ -526,6 +582,8 @@ void MainWindow::chooseMapElement(QListWidgetItem *lwi) {
       lwi->setSelected(false);
     }
     else {
+      clearSpawnPointSelection();
+      // 省一次查找元素ID
       _selectedMapElementLayer = ui->tabWidgetElement->currentWidget() == ui->tabGround
                                    ? QQTMap::kGround
                                    : QQTMap::kTop;
@@ -550,13 +608,31 @@ void MainWindow::setGameMapEditEnabled(bool b) const {
   ui->pushButtonResetSize->setEnabled(b);
 }
 void MainWindow::paintEvent(QPaintEvent *event) {
-  // undo & redo 选项可选性
+    // undo & redo 选项可选性
   ui->actionRedo->setEnabled(_currentMapEditCommandGroupIt != _mapEditCommandGroups.end());
   ui->actionUndo->setEnabled(_currentMapEditCommandGroupIt != _mapEditCommandGroups.begin());
+  setGameMapEditEnabled(!!_qqtMap);
+  if (_selectedSpawnGroupId != -1 && _selectedMapElementId > 0) {
+    qCritical("同时选中出生组和地图元素");
+    _selectedSpawnGroupId = 0;
+    _selectedMapElementId = 0;
+  }
+  ui->actionSpawn_Point_1->setChecked(_selectedSpawnGroupId == 0);
+  ui->actionSpawn_Point_2->setChecked(_selectedSpawnGroupId == 1);
+  if (auto it = _mapElementId2MapElementListItem.find(_selectedMapElementId);
+    it != _mapElementId2MapElementListItem.end()) {
+    it->second->setSelected(true);
+  }
+  else {
+    ui->listWidgetGround->clearSelection();
+    ui->listWidgetTop->clearSelection();
+  }
+
   // 地图元数据
   if (_qqtMap) {
     ui->comboBoxGameMode->setCurrentIndex(static_cast<int>(_qqtMap->getGameMode()) - 1);
     ui->comboBoxMaxPlayers->setCurrentText(QString::number(_qqtMap->getNMaxPlayers()));
+    // 宽高要求用户手动复原
   }
 }
 void MainWindow::closeEvent(QCloseEvent *event) {
@@ -570,7 +646,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
   if (watched == _mapAreaFrame) {
     if (!_qqtMap) {
-      return false;
+      return true;
     }
     switch (event->type()) {
     default:
@@ -580,16 +656,21 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
         // 按照Qt的机制，QPainter在QWidget上画图，只能在相应QWidget的Paint事件中完成
         auto [sizeW, sizeH] = getMapAreaSize();
         _mapAreaFrame->setFixedSize(sizeW, sizeH);
-        QPainter painter(_mapAreaFrame);
         // 绘制地图
-        this->paintMap(painter);
+        this->paintMap(*_mapAreaFrame);
 
-        // 绘制选中的元素的悬浮，半透明显示
-        if (_selectedMapElementId) {
-          const QQTMapElement *elem = QQTMapDatabase::getProvider()->getMapElementById(_selectedMapElementId);
-          if (!_qqtMap->isOutOfBound(_mouseGridX, _mouseGridY)
-            && !_qqtMap->isOutOfBound(_mouseGridX + elem->w - 1, _mouseGridY + elem->h - 1)) {
-            this->paintHoverMapElement(_mouseGridX, _mouseGridY);
+        if (!_qqtMap->isOutOfBound(_mouseGridX, _mouseGridY)) {
+          // 绘制选中的元素的悬浮，半透明显示
+          if (_selectedMapElementId > 0) {
+            const QQTMapElement *elem = QQTMapDatabase::getProvider()->getMapElementById(_selectedMapElementId);
+            if (!_qqtMap->isOutOfBound(_mouseGridX + elem->w - 1, _mouseGridY + elem->h - 1)) {
+              paintMapElement
+                  (*_mapAreaFrame, _mouseGridX, _mouseGridY, _selectedMapElementId, _selectedMapElementLayer, true);
+            }
+          }
+          // 绘制悬浮出生点
+          if (_selectedSpawnGroupId != -1) {
+            paintSpawnPoint(*_mapAreaFrame, _mouseGridX, _mouseGridY, _selectedSpawnGroupId, -1, true);
           }
         }
         // 更新绘制
@@ -615,13 +696,22 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
           statusBar()->clearMessage();
         }
         // 鼠标点住持续移动时继续放置或移除
-        if (_isPutting) {
+        if (e->buttons() & Qt::LeftButton) {
+          _isPutting = true;
           put();
         }
-        if (_isRemoving) {
+        else if (_isPutting) {
+          _isPutting = false;
+          endCommand();
+        }
+        if (e->buttons() & Qt::RightButton) {
+          _isRemoving = true;
           remove();
         }
-        _mapAreaFrame->update();
+        else if (_isRemoving) {
+          _isRemoving = false;
+          endCommand();
+        }
         // 如果选中了元素：继续放置
         return true;
       }
@@ -643,10 +733,6 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
       }
     case QEvent::MouseButtonRelease:
       {
-        if (_isPutting || _isRemoving) {
-          _isPutting = _isRemoving = false;
-          endCommand();
-        }
         return true;
       }
     }

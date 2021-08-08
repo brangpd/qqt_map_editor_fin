@@ -7,12 +7,12 @@ MapElementListWidgetItem::MapElementListWidgetItem(int id, QListWidget *view)
     _elementId(id) {
   auto *provider = QQTMapDatabase::getProvider();
   if (!provider) {
-    cerr << "没有数据提供器，无法初始化元素列表项" << endl;
+    qCritical("没有数据提供器，无法初始化元素列表项");
     return;
   }
   auto *qqfdimg = provider->getQqfdimgOfMapElementById(id);
   if (!qqfdimg) {
-    cerr << "找不到元素的QQFDIMG：" << id << endl;
+    qWarning("找不到元素%i的QQFDIMG", id);
     return;
   }
 

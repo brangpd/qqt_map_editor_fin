@@ -7,7 +7,7 @@ using namespace std;
 #include "DefineIOMacros.h"
 bool QQFDIMG::read(std::istream &is) {
   if (!is) {
-    cerr << "输入流为空\n";
+    qWarning("输入流为空");
     return false;
   }
   // 判断文件头是否为 QQF DIMG
@@ -16,7 +16,7 @@ bool QQFDIMG::read(std::istream &is) {
   head[8] = 0;
   if (head != "QQF\x1a"
     "DIMG"sv) {
-    cerr << "QQFDIMG文件头格式错误\n";
+    qWarning("QQFDIMG文件头格式错误");
     return false;
   }
   READT(version, int16_t);
@@ -30,7 +30,7 @@ bool QQFDIMG::read(std::istream &is) {
   READT(hOrigin, int32_t);
 
   if (nFrames <= 0 || nDirections <= 0) {
-    cerr << "QQFDIMG帧数或方向数非正" << endl;
+    qWarning("QQFDIMG帧数或方向数非正");
     return false;
   }
   nFrames = nDirections = 1;
@@ -104,7 +104,8 @@ bool QQFDIMG::read(std::istream &is) {
       }
     }
     break;
-  default: cerr << "QQFDIMG未支持的版本" << version << endl;
+  default:
+    qCritical("QQFDIMG未支持的版本%i", version);
     return false;
   }
   previewImage = frames.front().image;
@@ -112,6 +113,6 @@ bool QQFDIMG::read(std::istream &is) {
   return true;
 }
 bool QQFDIMG::write(std::ostream &/*os*/) const {
-  cerr << "写QQFDIMG没有实现" << endl;
+  qCritical("写QQFDIMG没有实现");
   return false;
 }

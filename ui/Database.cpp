@@ -1,11 +1,11 @@
 #include "Database.h"
 
-#include <iostream>
+#include <algorithm>
 #include <memory>
 #include <QFile>
 #include <QString>
-#include <unordered_map>
 #include <strstream>
+#include <unordered_map>
 #include <vector>
 
 #include "QQFDIMG.h"
@@ -26,11 +26,11 @@ class QQTMapEditorDatabaseProvider final : public QQTMapDatabase::Provider
 public:
   bool init() {
     if (!initMapElementProperties()) {
-      cerr << "初始化mapElem.prop失败" << endl;
+      qCritical("初始化mapElem.prop失败");
       return false;
     }
     if (!initMapElementQqfdimgs()) {
-      cerr << "初始化地图元素QQFDIMG失败" << endl;
+      qCritical("初始化地图元素QQFDIMG失败");
       return false;
     }
     return true;
@@ -85,10 +85,11 @@ private:
           elem.attributes.emplace_back(attr);
         }
       }
+      ranges::sort(_allMapElementIds);
       return true;
     }
     catch (exception const &e) {
-      cerr << e.what() << endl;
+      qCritical("初始化元素属性出现异常：%s", e.what());
       return false;
     }
   }
@@ -103,14 +104,14 @@ private:
         QByteArray content = file.readAll();
         istrstream iss(content.data(), content.size());
         if (!_mapElementId2Qqfdimg[id].read(iss)) {
-          cerr << "读取QQFDIMG失败：" << id << endl;
+          qCritical("读取元素%iQQFDIMG失败", id);
           return false;
         }
       }
       return true;
     }
     catch (exception const &e) {
-      cerr << e.what() << endl;
+      qCritical("初始化元素QQFDIMG属性出现异常：%s", e.what());
       return false;
     }
   }
@@ -132,6 +133,6 @@ bool Database::init() {
     QQTMapDatabase::setProvider(CurrentProvider.get());
     return true;
   }
-  cerr << "初始化地图数据失败" << endl;
+  qCritical() << "初始化地图数据失败";
   return false;
 }

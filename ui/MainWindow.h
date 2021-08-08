@@ -1,13 +1,11 @@
 #pragma once
 
 #include <QMainWindow>
-#include <ranges>
-#include <deque>
 #include <list>
 #include <memory>
-#include <string>
 #include <utility>
-#include <unordered_set>
+#include <unordered_map>
+#include <vector>
 
 #include "EQQTCity.h"
 #include "MapEditCommand.h"
@@ -42,8 +40,8 @@ private:
     explicit MapEditCommandGroup(std::vector<std::unique_ptr<MapEditCommand>> &group) {
       _group.swap(group);
     }
-    void exec() override { for (auto &&cmd : _group) { cmd->exec(); } }
-    void undo() override { for (auto &&cmd : _group | std::views::reverse) { cmd->undo(); } }
+    void exec() override;
+    void undo() override;
   private:
     std::vector<std::unique_ptr<MapEditCommand>> _group;
   };
@@ -60,14 +58,11 @@ private:
   /// 保存地图到文件
   /// \return 是否保存成功
   bool saveMapToFile();
-  bool isDirty() const { return _isDirty; }
-  void setIsDirty() { _isDirty = true; }
   /// 地图发生修改后，在退出或关闭时调用询问是否保存或丢弃修改
   /// \return 确认（保存或丢弃）返回1，取消或关闭返回0，返回0说明步骤阻塞，即不能退出或关闭或打开新地图
   bool tipSaveIfNecessary();
   /// 地图打开或新建完成后，初始化编辑区域
   void openMapEdit();
-  void closeMapEdit();
   std::pair<int, int> getMapAreaSize() const;
   MapElementListWidgetItem* getMapElementListItem(int id) const;
   const std::vector<int>& getAllMapElementIdsByCity(EQQTCity city) const {
@@ -76,15 +71,20 @@ private:
   std::vector<int>& getAllMapElementIdsByCity(EQQTCity city) {
     return _allMapElementIdsByCity[static_cast<int>(city) - 1];
   }
-  void clearSpawnPointSelection() const;
-  void clearMapElementSelection() const;
-  void paintMap(QPainter &painter) const;
-  void paintHoverMapElement(int gridX, int gridY) const;
+  void clearSpawnPointSelection();
+  void clearMapElementSelection();
+  void paintMap(QPaintDevice &device) const;
+  static void paintGrid(QPaintDevice &device, int w, int h);
+  static void paintMapElement(QPaintDevice &device, int x, int y, int id, int layer, bool transparent = false);
+  static void paintSpawnPoint(QPaintDevice &device, int x, int y, int group, int index, bool transparent = false);
+  void paintHoverMapElement() const;
   void paintHoverSpawnPoint() const;
   void put();
   void remove();
   void resize(int w, int h);
   void resetSize() const;
+  void chooseSpawnGroup(int group);
+  bool isDirty() const { return !_mapEditCommandGroups.empty(); }
   static std::pair<int, int> localPixels2Grids(int x, int y);
   static std::pair<int, int> grids2LocalPixels(int x, int y);
 
@@ -96,13 +96,14 @@ private:
     endCommand();
   }
   void endCommand();
+  void resetCommands();
 
 private slots:
   void undo();
   void redo();
   void newMap();
   void openMap();
-  void closeMap();
+  bool closeMap();
   bool saveMap();
   bool saveMapAs();
   bool saveMapAsImage();
@@ -114,7 +115,6 @@ private:
   QString _filename;
   std::shared_ptr<QQTMap> _qqtMap;
   std::shared_ptr<MapEditData> _mapEditData;
-  bool _isDirty{false};
   QFrame *_mapAreaFrame{};
   std::unordered_map<int, MapElementListWidgetItem*> _mapElementId2MapElementListItem;
   std::vector<int> _allMapElementIdsByCity[std::size(allQQTCities)];
@@ -127,4 +127,6 @@ private:
   std::list<MapEditCommandGroup> _mapEditCommandGroups;
   std::vector<std::unique_ptr<MapEditCommand>> _currentMapEditCommands;
   decltype(_mapEditCommandGroups)::iterator _currentMapEditCommandGroupIt;
+  QListWidget *_mapElementListWidget[2];
+  QAction *_spawnGroupAction[2];
 };
