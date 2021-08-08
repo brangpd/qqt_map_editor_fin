@@ -21,7 +21,19 @@ include_directories(lib)
 file(GLOB_RECURSE _lib_sources lib/*)
 file(GLOB_RECURSE _ui_sources ui/*)
 
+# Set some Win32 Specific Settings
+if (NOT CMAKE_BUILD_TYPE MATCHES Debug)
+if (WIN32)
+set(_gui WIN32)
+endif (WIN32)
+# Set some Apple MacOS Specific settings
+if (APPLE)
+set(_gui MACOSX_BUNDLE)
+endif (APPLE)
+endif ()
+
 add_executable(${PROJECT_NAME}
+    ${_gui}
     main.cpp res.qrc
     ${_lib_sources}
     ${_ui_sources}
