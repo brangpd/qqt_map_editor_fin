@@ -63,7 +63,7 @@ private:
   bool tipSaveIfNecessary();
   /// 地图打开或新建完成后，初始化编辑区域
   void openMapEdit();
-  std::pair<int, int> getMapAreaSize() const;
+  static std::pair<int, int> getMapAreaSize(const QQTMap &map);
   MapElementListWidgetItem* getMapElementListItem(int id) const;
   const std::vector<int>& getAllMapElementIdsByCity(EQQTCity city) const {
     return _allMapElementIdsByCity[static_cast<int>(city) - 1];
@@ -73,7 +73,11 @@ private:
   }
   void clearSpawnPointSelection();
   void clearMapElementSelection();
-  void paintMap(QPaintDevice &device) const;
+  static void paintMap(QPaintDevice &device, const QQTMap &map,
+                       bool shouldPaintGround,
+                       bool shouldPaintTop,
+                       bool shouldPaintGrid,
+                       bool shouldPaintSpawnPoints);
   static void paintGrid(QPaintDevice &device, int w, int h);
   static void paintMapElement(QPaintDevice &device, int x, int y, int id, int layer, bool transparent = false);
   static void paintSpawnPoint(QPaintDevice &device, int x, int y, int group, int index, bool transparent = false);
@@ -81,7 +85,7 @@ private:
   void paintHoverSpawnPoint() const;
   void put();
   void remove();
-  void resize(int w, int h);
+  void resizeMap();
   void resetSize() const;
   void chooseSpawnGroup(int group);
   bool isDirty() const { return !_mapEditCommandGroups.empty(); }
@@ -119,9 +123,9 @@ private:
   std::unordered_map<int, MapElementListWidgetItem*> _mapElementId2MapElementListItem;
   std::vector<int> _allMapElementIdsByCity[std::size(allQQTCities)];
   int _mouseGridX{-1}, _mouseGridY{-1};
-  int _selectedMapElementId{};
-  int _selectedMapElementLayer{-1};
-  int _selectedSpawnGroupId{-1};
+  int _selectedMapElementId{}; ///< 当前选中的地图元素ID，正数有效
+  int _selectedMapElementLayer{-1}; ///< 当前选中的地图元素层，0上，1下，-1未选中
+  int _selectedSpawnGroupId{-1}; ///< 当前选中的出生组，0/1，-1为未选中
   bool _isPutting{};
   bool _isRemoving{};
   std::list<MapEditCommandGroup> _mapEditCommandGroups;

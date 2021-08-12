@@ -183,7 +183,7 @@ bool QQTMap::read(std::istream &is) {
   READT(_version, int32_t);
   switch (_version) {
   default:
-    qInfo() << "不支持的地图版本：" << _version;
+    qCritical() << "不支持的地图版本：" << _version;
     return false;
   case 3:
   case 4:
@@ -239,7 +239,7 @@ bool QQTMap::read(std::istream &is) {
   is.seekg(nItemPoint * static_cast<long>(sizeof(int16_t) * 2), ios::cur);
 
   // 两个队伍的玩家出生点。在竞技的标准模式（两组）下有用。在自由模式中没有队伍的区别，可以只放第一组
-  for (std::vector<std::pair<int32_t, int32_t>> &currentGroup : _spawnPoints) {
+  for (auto &currentGroup : _spawnPoints) {
     int32_t nBirthPoint;
     READT(nBirthPoint, int32_t);
     currentGroup.clear();
@@ -300,15 +300,17 @@ bool QQTMap::write(std::ostream &os) {
         }
         else {
           int id = _elementIds[kTop][i][j];
-          if (id == specialIds[0]) {
-            _specialPoints[0] = {j, i};
-            WRITET(0, int32_t);
-            continue;
-          }
-          if (id == specialIds[1]) {
-            _specialPoints[1] = {j, i};
-            WRITET(0, int32_t);
-            continue;
+          if (specialIds.size() == 2) {
+            if (id == specialIds[0]) {
+              _specialPoints[0] = {j, i};
+              WRITET(0, int32_t);
+              continue;
+            }
+            if (id == specialIds[1]) {
+              _specialPoints[1] = {j, i};
+              WRITET(0, int32_t);
+              continue;
+            }
           }
           if (auto elem = dataProvider->getMapElementById(id);
             elem && (elem->canBeHidden() ^ (k == 1))) {
@@ -354,7 +356,7 @@ bool QQTMap::write(std::ostream &os) {
   }
 
   WRITET(_specialPoints.size(), int32_t);
-  for (int i = 0, ie = _specialPoints.size(); i < ie; ++i) {
+  for (int i = 0, ie = static_cast<int>(_specialPoints.size()); i < ie; ++i) {
     if (i >= 2) {
       qWarning("特殊元素超过2个");
       break;

@@ -998,5 +998,7 @@
         <file>mapElem/water/elem9_stand.img</file>
         <file>mapElem.prop</file>
         <file>translations/qtbase_zh_CN.qm</file>
+        <file>README.md</file>
+        <file>pve50_4.png</file>
     </qresource>
 </RCC>
